@@ -36,6 +36,7 @@ def annotate_tree_with_state_changes(atree):
 	return tree
 
 
+
 def sample_mut_tree(atree,mut_rate,add_driver_muts=True):
 
 	tree=dendropy.Tree(atree)
@@ -49,6 +50,12 @@ def sample_mut_tree(atree,mut_rate,add_driver_muts=True):
 
 	return tree
 
+
+def sample_muts_on_lineages(lineages,mut_rate,add_driver_muts=True):
+	linsimple=convert_to_simple_lineage_list(lineages)
+	linsastrees=list(map(lambda x:dendropy.Tree(seed_node=x),linsimple))
+	linmuts=list(map(lambda x: sample_mut_tree(x,mut_rate),linsastrees))
+	return linmuts
 
 
 
@@ -86,8 +93,12 @@ def convert_to_simple_lineage_list(lineages):
 
 def nodes_to_trees(lineages):
 	alllineages=convert_to_simple_lineage_list(lineages)
-	trees=map(lambda x: dendropy.Tree(seed_node=x),alllineages)
+	trees=list(map(lambda x: dendropy.Tree(seed_node=x),alllineages))
 	return trees
+
+def trees_to_nodes(trees):
+	lins=list(map(lambda x: x.seed_node,trees))
+	return lins
 
 def lineages_to_SFS(lineages,nsampled=None,normalize=True):
 	alllineages=convert_to_simple_lineage_list(lineages)
@@ -101,6 +112,7 @@ def lineages_to_SFS(lineages,nsampled=None,normalize=True):
 
 	# main functionality here
 	sfs=[0.0 for i in range(nsampled+1)]
+	print("lensfs="+str(len(sfs)))
 
 	for lineage in alllineages:
 		tree=dendropy.Tree(seed_node=lineage)
@@ -135,7 +147,44 @@ def print_lineages(lineages):
 
 	return outstr
 
+# Samples a genealogy from the subsampled process.
+# INPUT: Simulation parameters:
+# brate - a list of birth rates for each state
+# drate - a list of death rates for each state
+# dt - time step
+# ts - start time (default=0.)
+# te - end time
+# transmat - transition matrix for per-time-unit, per-cell transition probabilities between states 
+# startdist - a list with the number of cells in each state at the start of the simulation
+# n_samples_bottom - the number of individuals sampled at end time (if -1, sample all of the population - won't work for large populations)
+# mut_rate - the expected number of neutral mutations per time unit (the number of mutations is Poisson-distributed) 
 
+def sample_genealogy(brate,drate,dt,ts,te,transmat,startdist,n_samples_bottom,mut_rate,normalize=True):
+	deme=MultiTypeDeme(brate,drate,dt,ts,te,transmat)#set up the class params
+
+	deme.simulateForward(startdist)
+	if n_samples_bottom==-1:
+		n_samples_bottom=sum(deme.tdEnd) #if not supplied, sample all of the population
+
+	sampledlineages=deme.sampleAtBottom(n_samples_bottom) # set up subsampled lineages from the bottom to sample upwards
+
+	lins=deme.simulateBackward(sampledlineages) 
+
+	treeswithmuts=sample_muts_on_lineages(lins,mut_rate) # place neutral muts on branches (Poisson-distributed)
+	linswithmuts=trees_to_nodes(treeswithmuts)
+	sfs=lineages_to_SFS(linswithmuts,None,normalize)
+	return linswithmuts,sfs
+
+
+
+
+#--------------Test functions-----------
+
+def sample_genealogy_test():
+	lins,sfs=sample_genealogy(brate=[0.3,0.4],drate=[0.29,0.29],dt=0.1,ts=0.0,
+		te=50,transmat=[[0.999,0.001],[0.0,1.0]],startdist=[100,0],n_samples_bottom=20,mut_rate=0.1,normalize=False)
+	print(print_lineages(lins))
+	print(sfs)
 
 def multideme_test():
 	deme=MultiTypeDeme(brate=[0.3,0.4],drate=[0.29,0.29],dt=0.1,ts=0.0,
@@ -216,8 +265,8 @@ def tree_test_bifurcation():
 #deme_test()
 #tree_test_bifurcation()
 #multitype_deme_test()
-multideme_test()
-
+#multideme_test()
+sample_genealogy_test()
 
 
 
